@@ -13,6 +13,6 @@ model.x.terminalSet = Polyhedron('lb', [-1; -1], 'ub', [1; 1]);
 % terminal set must be provided
 ctrl = EMinTimeController(model);
 assert(isa(ctrl, 'EMinTimeController'));
-assert(ctrl.nr==50);
+assert(ctrl.nr==50 || ctrl.nr==58);
 
 end
