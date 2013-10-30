@@ -1,0 +1,117 @@
+# official name of the package in tbxmanager
+PACKAGENAME = mpt3lowcom
+
+# where, relative to cwd, is the codebase (no trailing slashes please!)
+CODEDIR = mpt3lowcom
+
+# version and release names
+VERSION = 
+ifeq ($(VERSION),)
+	VERSION = $(shell hg tip --template '{node|short}' | cut -c1-6)
+	FULLVERSION = dev-$(VERSION)
+	UNSTABLE = 1
+else
+	FULLVERSION = $(VERSION)
+	UNSTABLE = 0
+endif
+
+
+# replace dots with the underscores in the version string
+MODVERSION = $(shell echo $(VERSION)| sed 's/\./_/g' )
+FILENAME = $(PACKAGENAME)-$(MODVERSION)
+RELEASEDIR = release
+DATE = $(shell date  +"%d.%m.%G")
+
+##
+# tbxmanger configuration
+# no trailing slashes in the TBX_HOST URL please!
+TBX_HOST = http://www.tbxmanager.com/api/v1
+TBX_PLATFORM = all
+ifeq ($(UNSTABLE),1)
+	TBX_CODE_URL = http://control.ee.ethz.ch/~mpt/tbx/pool/$(PACKAGENAME)/unstable/$(FILENAME).tgz
+	TBX_REPOSITORY = unstable
+else
+	TBX_CODE_URL = http://control.ee.ethz.ch/~mpt/tbx/pool/$(PACKAGENAME)/$(MODVERSION)/$(FILENAME).tgz
+	TBX_REPOSITORY = stable
+endif
+
+# prefix = @prefix@
+# exec_prefix = @exec_prefix@
+# instdir = @datarootdir@/
+# bindir = @bindir@
+CWD = `pwd`
+
+# programs
+SHELL = /bin/bash
+SED = @SED@
+LN_S = @LN_S@
+WGET = @WGET@
+UNZIP = @UNZIP@
+GUNZIP = @GUNZIP@
+GZIP = @GZIP@
+SCP = @SCP@
+RSYNC = @RSYNC@
+CURL = @CURL@
+
+# quick distribution: code with help description
+# package tagged with id of the tip
+distcode:
+	@echo "Creating $(RELEASEDIR)/$(FILENAME).tgz..."
+	@mkdir -p "$(RELEASEDIR)/$(FILENAME)"
+	@cp -Rf "$(CODEDIR)" "$(RELEASEDIR)/$(FILENAME)"
+	@# remove .xml, .*~, .orig, *.mex*, Makefile* files
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "*.xml" -delete
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "*.*~" -delete
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "*.orig" -delete
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "*.bak" -delete
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "*.maxdoc_bak" -delete
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "*.mex*" -delete
+	@find "$(RELEASEDIR)/$(FILENAME)" -name "Makefile*" -delete
+	@# pack the directory
+	@cd "$(RELEASEDIR)" && tar czf "$(FILENAME).tgz" "$(FILENAME)/"
+	@rm -rf $(RELEASEDIR)/$(FILENAME)/
+
+# upload the package to autserv
+uploadcode: 
+	@test -f $(RELEASEDIR)/$(FILENAME).tgz || $(MAKE) distcode
+ifeq ($(UNSTABLE),1)
+	@echo "Uploading $(FILENAME).tgz to mpt@autserv01:~/public_html/tbx/pool/$(PACKAGENAME)/unstable"
+	@scp $(RELEASEDIR)/$(FILENAME).tgz mpt@autserv01.ee.ethz.ch:/home/mpt/public_html/tbx/pool/$(PACKAGENAME)/unstable/
+	@echo "       URL: http://control.ee.ethz.ch/~mpt/tbx/pool/$(PACKAGENAME)/unstable/$(FILENAME).tgz"
+else
+	@echo "Uploading $(FILENAME).tgz to mpt@autserv01:~/public_html/tbx/pool/$(PACKAGENAME)/"$(MODVERSION)
+	@scp -r $(RELEASEDIR)/$(FILENAME).tgz mpt@autserv01.ee.ethz.ch:/home/mpt/public_html/tbx/pool/$(PACKAGENAME)/
+	@echo "       URL: http://control.ee.ethz.ch/~mpt/tbx/pool/$(PACKAGENAME)/$(MODVERSION)/$(FILENAME).tgz"
+endif
+	@echo "Version ID: $(FULLVERSION)"
+
+# register code distribution at tbxmanager
+tbxcode:
+# check that the download URL exists by checking the HTTP return code
+ifneq ($(shell $(CURL) -o /dev/null -sL -w "%{http_code}" "$(TBX_CODE_URL)"),200)
+	$(error The URL does not exist: $(TBX_CODE_URL))
+endif
+# read login and password from stdin if they are not provided from the
+# command line
+ifndef TBX_LOGIN
+	$(eval TBX_LOGIN:=$(shell read -p "Login: "; echo $$REPLY))
+endif
+ifndef TBX_PASSWORD
+	$(eval TBX_PASSWORD:=$(shell read -p "Password: "; echo $$REPLY))
+endif
+# create new version
+	@echo "Registering version \"$(FULLVERSION)\" for package \"$(PACKAGENAME)\" in repository \"$(TBX_REPOSITORY)\""
+	@$(CURL) --user $(TBX_LOGIN):$(TBX_PASSWORD) "$(TBX_HOST)/versions/create?package=$(PACKAGENAME)&version=$(FULLVERSION)&repository=$(TBX_REPOSITORY)"
+	@echo
+# create new download link for all platforms
+	@echo "Registering link for platform \"$(TBX_PLATFORM)\": $(TBX_CODE_URL)"
+	@$(CURL) --user $(TBX_LOGIN):$(TBX_PASSWORD) "$(TBX_HOST)/links/create?package=$(PACKAGENAME)&version=$(FULLVERSION)&platform=$(TBX_PLATFORM)&url=$(TBX_CODE_URL)"
+	@echo
+	@hg tag $(FULLVERSION)
+
+clean:
+	@-rm config.status config.log matlab_info.tmp 
+
+# phony targets
+.PHONY: clean
+
