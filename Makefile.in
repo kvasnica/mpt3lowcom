@@ -80,7 +80,16 @@ ifeq ($(UNSTABLE),1)
 	@echo "       URL: http://control.ee.ethz.ch/~mpt/tbx/pool/$(PACKAGENAME)/unstable/$(FILENAME).tgz"
 else
 	@echo "Uploading $(FILENAME).tgz to mpt@autserv01:~/public_html/tbx/pool/$(PACKAGENAME)/"$(MODVERSION)
-	@scp -r $(RELEASEDIR)/$(FILENAME).tgz mpt@autserv01.ee.ethz.ch:/home/mpt/public_html/tbx/pool/$(PACKAGENAME)/
+	@# create directory if it does not exist
+	@mkdir -p "$(RELEASEDIR)/$(MODVERSION)"
+	@# move the file to directory
+	@mv $(RELEASEDIR)/$(FILENAME).tgz "$(RELEASEDIR)/$(MODVERSION)/"
+	@# upload the directory
+	@scp -r $(RELEASEDIR)/$(MODVERSION) mpt@autserv01.ee.ethz.ch:/home/mpt/public_html/tbx/pool/$(PACKAGENAME)/
+	@# move the file back from the directory
+	@mv "$(RELEASEDIR)/$(MODVERSION)/$(FILENAME).tgz" "$(RELEASEDIR)/"
+	@# remove the auxiliary directory
+	@rm -r "$(RELEASEDIR)/$(MODVERSION)"
 	@echo "       URL: http://control.ee.ethz.ch/~mpt/tbx/pool/$(PACKAGENAME)/$(MODVERSION)/$(FILENAME).tgz"
 endif
 	@echo "Version ID: $(FULLVERSION)"
