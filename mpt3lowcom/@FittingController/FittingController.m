@@ -14,9 +14,21 @@ classdef FittingController < EMPCController
 			out = 'Explicit fitting-based controller';
 		end
 
-        function obj = FittingController(ctrl)
-            % Constructor:
-			%   ctrl = FittingController(explicit_controller)
+        function obj = FittingController(ctrl, varargin)
+            % Fitting-based complexity reduction for explicit MPC
+            %
+            % Syntax:
+			%   simple = FittingController(complex, ['option1', value1,...])
+            %
+            % Input:
+            %   complex: a complex explicit MPC controller
+            %
+            % Options:
+            %   'N': prediction horizon for the simple controller
+            %        (default=1)
+            %   'invariance': if true, enforces invariance properties of
+            %                 the simple controller 
+            %                 (default=true)
             
 			if nargin==0
                 return
@@ -24,8 +36,14 @@ classdef FittingController < EMPCController
 				error('Input must be an EMPCController object.');
 			elseif numel(ctrl.optimizer)>1
 				error('Single optimizer please.');
-			end
+            end
 			
+            ip = inputParser;
+            ip.addParamValue('N', 1);
+            ip.addParamValue('invariance', true);
+            ip.parse(varargin{:});
+            options = ip.Results;
+            
 			% copy data from the source object
 			obj.importUserData(ctrl.copy());
 			% only keep u0
@@ -33,15 +51,15 @@ classdef FittingController < EMPCController
 			obj.N = 1; % to get correct size of the open-loop optimizer
 			% TODO: implement a better way
 			
-			obj.construct();
+			obj.construct(options);
 		end
 		
-		function construct(obj)
+		function construct(obj, options)
 			% Constructs the fitting-based controller
 			
 			% construct a horizon-1 feedback with set constraints
 			model = obj.model.copy();
-			Hull = obj.optimizer.convexHull();
+			Hull = obj.optimizer.Domain;
 			if ~model.x.hasFilter('initialSet')
 				model.x.with('initialSet');
 			end
@@ -55,8 +73,7 @@ classdef FittingController < EMPCController
 				model.x.without('terminalSet');
 			end
 			fprintf('Computing simple partition...\n');
-			N = 1;
-			new = EMPCController(model, N);
+			new = EMPCController(model, options.N);
 			if length(new.optimizer)>1
 				fprintf('Removing overlaps...\n');
 				new.optimizer = new.optimizer.min('obj');
@@ -66,13 +83,13 @@ classdef FittingController < EMPCController
 			fprintf('Refining local feedback laws...\n');
 			obj.optimizer = obj.refine(obj.optimizer, new.optimizer, ...
 				model.u.min, model.u.max, Hull, ...
-				model.A, model.B);
+				model.A, model.B, options);
 		end
 	end
 	
 	methods (Static, Hidden)
 		
-        function new = refine(old, new, umin, umax, Cinf, Alti, Blti)
+        function new = refine(old, new, umin, umax, Cinf, Alti, Blti, options)
             % Refine feedback law of "new" by minimizing the integral error
             % between the "old" and the "new" feedback
 			
@@ -138,11 +155,13 @@ classdef FittingController < EMPCController
 					%   umin <= uaprx <= umax
 					CON = CON + [ -tol+umin <= (alpha*x + beta) <= umax+tol ];
 					
-					% invariance:
-% 					%   A*x+B*u \in \Cinf
-% 					if ~iscell(Alti)
-% 						CON = CON + [ Cinf.A*(Alti*x + Blti*(alpha*x + beta)) <= Cinf.b+tol ];
-% 					end
+                    if options.invariance
+                        % invariance:
+                        %   A*x+B*u \in \Cinf
+                        if ~iscell(Alti)
+                            CON = CON + [ Cinf.A*(Alti*x + Blti*(alpha*x + beta)) <= Cinf.b+tol ];
+                        end
+                    end
 				end
 
 				% optimize for alpha and beta
@@ -151,7 +170,10 @@ classdef FittingController < EMPCController
 					error(info.info)
 				elseif info.problem==-1
 					fprintf('WARNING: unknown error in solver.\n');
-				end
+                end
+                if double(tol) > MPTOPTIONS.abs_tol
+                    fprintf('Constraints are violated by %f.\n', double(tol));
+                end
 				
 				% store the updated feedback
 				feedback_new = AffFunction(double(alpha), double(beta));
