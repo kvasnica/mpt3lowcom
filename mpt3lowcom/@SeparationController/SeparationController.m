@@ -156,9 +156,16 @@ classdef SeparationController < EMPCController
 			end
 			fprintf('Solving the separation problem...\n');
 			info = solvesdp(CON, []);
-			if info.problem~=0
-				warning(info.info);
-			end
+            % these statuses indicate a feasible solution
+            % (from "help yalmiperror"):
+            %  0: Successfully solved
+            %  3: Maximum #iterations or time-limit exceeded
+            %  4: Numerical problems
+            %  5: Lack of progress
+            feasible = ismember(info.problem, [0, 3, 4, 5]);
+            if ~feasible
+                error(info.info)
+            end
 			
 			% optimal separator
 			aopt = double(a);
